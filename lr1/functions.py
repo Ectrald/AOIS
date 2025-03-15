@@ -1,5 +1,8 @@
+shift = 127
+bits_for_exp = 8
+bits_for_mantissa = 23
 def convert_number_to_binary_code(x):
-    if x > 127 or x < -127:
+    if x > shift or x < -shift:
         print("Number can not be more than 127 and less than -127")
         exit(0)
     if x < 0:
@@ -284,9 +287,7 @@ def float_to_ieee754(num):
 
     return result
 def ieee754_to_float(ieee):
-    shift = 127
-    bits_for_exp = 8
-    bits_for_mantissa = 23
+
     sign = ieee[0]
     exponent = 0
     for i in range(1, bits_for_exp + 1):
