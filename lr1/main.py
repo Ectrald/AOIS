@@ -28,7 +28,9 @@ match a:
     case 5:
         num1 = int(input("Input a first number: "))
         num2 = int(input("Input a second number: "))
-        print(binary_fixed_point_to_decimal(binary_division(num1, num2)))
+        division = binary_division(num1, num2)
+        print(division)
+        print(binary_fixed_point_to_decimal(division))
     case 6:
         num1 = float(input("Input a first number: "))
         num2 = float(input("Input a second number: "))

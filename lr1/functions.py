@@ -51,20 +51,37 @@ def get_additional_code(reverse_binary_number):
         additional_code += '1'
     return additional_code[::-1]
 
-def binary_to_signed_decimal(binary_str):
-    length = len(binary_str)
-    if binary_str[0] == '0':
-        decimal_value = 0
-        for i in range(length):
-            decimal_value += int(binary_str[length - 1 - i]) * (2 ** i)
-    else:
-        binary_pos_str = '0' + binary_str[1:]
-        decimal_value = 0
-        for i in range(length):
-            decimal_value += int(binary_pos_str[length - 1 - i]) * (2 ** i)
-        return -decimal_value
-    return decimal_value
 
+def binary_to_signed_decimal(binary_str, is_twos_complement=True):
+    if binary_str[0] == '1':
+        if is_twos_complement:
+            inverted = ''.join('1' if bit == '0' else '0' for bit in binary_str)
+            carry = 1
+            additional = ''
+            for bit in reversed(inverted):
+                if bit == '1' and carry == 1:
+                    additional = '0' + additional
+                elif bit == '0' and carry == 1:
+                    additional = '1' + additional
+                    carry = 0
+                else:
+                    additional = bit + additional
+            decimal_value = 0
+            for i, bit in enumerate(reversed(additional)):
+                decimal_value += int(bit) * (2 ** i)
+            decimal_value = -decimal_value
+        else:
+
+            decimal_value = 0
+            for i, bit in enumerate(reversed(binary_str[1:])):
+                decimal_value += int(bit) * (2 ** i)
+            decimal_value = -decimal_value
+    else:
+
+        decimal_value = 0
+        for i, bit in enumerate(reversed(binary_str)):
+            decimal_value += int(bit) * (2 ** i)
+    return decimal_value
 def binary_data(x):
     print(x)
     x = convert_number_to_binary_code(x)
@@ -73,32 +90,40 @@ def binary_data(x):
     print(x)
     x = get_additional_code(x)
     print(x)
-
 def binary_addition(a, b):
-    carry = '0'
-    result = ''
     if a > 0:
         bin1 = convert_number_to_binary_code(a)
     elif a < 0:
         bin1 = get_additional_code(get_revers_code(convert_number_to_binary_code(a)))
+    else:
+        bin1 = convert_number_to_binary_code(0)  # Если a = 0
+
     if b > 0:
         bin2 = convert_number_to_binary_code(b)
     elif b < 0:
         bin2 = get_additional_code(get_revers_code(convert_number_to_binary_code(b)))
+    else:
+        bin2 = convert_number_to_binary_code(0)  # Если b = 0
+
+    carry = 0
+    result = ''
+
     for i in range(7, -1, -1):
-        total = int(bin1[i]) + int(bin2[i]) + int(carry)
+        total = int(bin1[i]) + int(bin2[i]) + carry
         result = str(total % 2) + result
-        carry = str(total // 2)
+        carry = total // 2
+
     sign1 = bin1[0]
     sign2 = bin2[0]
     sign_res = result[0]
+
     if sign1 == sign2 and sign1 != sign_res:
         print("Переполнение!")
-    result = binary_to_signed_decimal(result[-8:])
+        result = result[1:]
+    result_decimal = binary_to_signed_decimal(result)
     print("result: ")
-    binary_data(result)
-    return result
-
+    binary_data(result_decimal)
+    return result_decimal
 def binary_subtraction(a, b):
     b = -b
     return binary_addition(a, b)
@@ -224,7 +249,7 @@ def binary_fixed_point_to_decimal(binary_str):
     return sign * (decimal_integer + decimal_fraction)
 def float_to_ieee754(num):
     result = [0]
-
+    bits_for_mantissa = 23
     integer_part = int(num)
     fractional_part = num - integer_part
 
@@ -236,7 +261,7 @@ def float_to_ieee754(num):
         integer_part //= 2
 
     binary.append('.')
-    for _ in range(23):
+    for _ in range(bits_for_mantissa):
         fractional_part *= 2
         bit = int(fractional_part)
         binary.append(str(bit))
@@ -253,21 +278,23 @@ def float_to_ieee754(num):
 
 
     mantissa_start = first_one_pos + 1
-    mantissa = binary_str.replace('.', '')[mantissa_start:mantissa_start + 23]
-    mantissa = mantissa.ljust(23, '0')
+    mantissa = binary_str.replace('.', '')[mantissa_start:mantissa_start + bits_for_mantissa]
+    mantissa = mantissa.ljust(bits_for_mantissa, '0')
     result.extend([int(x) for x in mantissa])
 
     return result
 def ieee754_to_float(ieee):
-
+    shift = 127
+    bits_for_exp = 8
+    bits_for_mantissa = 23
     sign = ieee[0]
     exponent = 0
-    for i in range(1, 9):
+    for i in range(1, bits_for_exp + 1):
         exponent = exponent * 2 + ieee[i]
-    exponent -= 127
+    exponent -= shift
 
     mantissa = 1.0
-    for i in range(9, 32):
+    for i in range(bits_for_exp + 1, bits_for_exp + bits_for_mantissa + 1):
         mantissa += ieee[i] * (2 ** -(i - 8))
 
 
@@ -277,9 +304,12 @@ def ieee754_to_float(ieee):
 def addition_float(first, second):
     first_ieee = float_to_ieee754(first)
     second_ieee = float_to_ieee754(second)
-
+    print(first_ieee)
+    print(second_ieee)
     first_float = ieee754_to_float(first_ieee)
     second_float = ieee754_to_float(second_ieee)
+    print(first_float)
+    print(second_float)
     result = first_float + second_float
 
     return result

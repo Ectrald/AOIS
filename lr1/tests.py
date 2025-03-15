@@ -19,7 +19,7 @@ class TestBinaryOperations(unittest.TestCase):
     def test_binary_to_signed_decimal(self):
         # Проверяем преобразование бинарных строк в десятичные числа
         self.assertEqual(binary_to_signed_decimal("00000101"), 5)
-        self.assertEqual(binary_to_signed_decimal("10000101"), -5)
+        self.assertEqual(binary_to_signed_decimal("10000101", False), -5)
 
     def test_binary_addition(self):
         # Проверяем сложение
