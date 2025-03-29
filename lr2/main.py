@@ -110,9 +110,13 @@ def truth_table(expression, variables):
 
     sdnf, sknf, sdnf_indices, sknf_indices = generate_sdnf_sknf(table, variables)
 
-    sdnf_bin = ''.join(['1' if i in map(int, sdnf_indices) else '0' for i in range(2 ** len(variables))])
-    sdnf_bin = sdnf_bin[::-1]
-    index_form = f"{int(sdnf_bin, 2)} - {sdnf_bin}"
+    
+    index_bits = []
+    for i in range(2 ** len(variables)):
+        index_bits.append('1' if table[i][-1] else '0')
+    index_binary = ''.join(reversed(index_bits))
+    index_decimal = int(index_binary, 2)
+    index_form = f"{index_decimal} - {index_binary}"
 
     print("\nСДНФ:", sdnf)
     print("Числовая форма СДНФ:", ", ".join(sdnf_indices))
