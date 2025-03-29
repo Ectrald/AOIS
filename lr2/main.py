@@ -110,12 +110,10 @@ def truth_table(expression, variables):
 
     sdnf, sknf, sdnf_indices, sknf_indices = generate_sdnf_sknf(table, variables)
 
-    
-    index_bits = []
-    for i in range(2 ** len(variables)):
-        index_bits.append('1' if table[i][-1] else '0')
-    index_binary = ''.join(reversed(index_bits))
-    index_decimal = int(index_binary, 2)
+    index_bits = [str(row[-1]) for row in table]  # Берём последний столбец (результат)
+    index_binary = ''.join(index_bits)  # Получаем бинарное представление
+    index_decimal = int(index_binary, 2)  # Переводим в десятичное число
+
     index_form = f"{index_decimal} - {index_binary}"
 
     print("\nСДНФ:", sdnf)

@@ -252,7 +252,6 @@ def binary_fixed_point_to_decimal(binary_str):
     return sign * (decimal_integer + decimal_fraction)
 def float_to_ieee754(num):
     result = [0]
-    bits_for_mantissa = 23
     integer_part = int(num)
     fractional_part = num - integer_part
 
@@ -274,7 +273,7 @@ def float_to_ieee754(num):
     point_pos = binary_str.index('.')
     first_one_pos = binary_str.replace('.', '').index('1')
 
-    exponent = point_pos - first_one_pos - 1 + 127
+    exponent = point_pos - first_one_pos - 1 + shift
 
     for i in range(7, -1, -1):
         result.append(1 if exponent & (1 << i) else 0)
@@ -296,7 +295,7 @@ def ieee754_to_float(ieee):
 
     mantissa = 1.0
     for i in range(bits_for_exp + 1, bits_for_exp + bits_for_mantissa + 1):
-        mantissa += ieee[i] * (2 ** -(i - 8))
+        mantissa += ieee[i] * (2 ** -(i - bits_for_exp))
 
 
     value = mantissa * (2 ** exponent)
