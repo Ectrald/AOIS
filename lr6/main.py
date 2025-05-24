@@ -16,7 +16,6 @@ class HashTable:
 
     def hash_function(self, key):
         """Вычисление числового значения ключа и хеш-адреса"""
-        # Преобразуем ключ в числовое значение по первым двум буквам (русский алфавит)
         alphabet = 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'
         first_char = key[0].lower()
         second_char = key[1].lower() if len(key) > 1 else 'а'
@@ -25,7 +24,6 @@ class HashTable:
             v1 = alphabet.index(first_char)
             v2 = alphabet.index(second_char)
         except ValueError:
-            # Если символы не найдены в алфавите (например, цифры или латинские буквы)
             v1 = ord(first_char) % 33
             v2 = ord(second_char) % 33
 
@@ -50,42 +48,48 @@ class HashTable:
         # Поиск свободного места с помощью квадратичного пробинга
         index = h
         collision_occurred = False
-        last_index = None
+        prev_index = None
+        visited = set()
+        i = 0
 
-        for i in range(self.size):
+        while i < self.size:
             index = self.quadratic_probing(h, i)
+            if index in visited:
+                break
+            visited.add(index)
 
+            # Если ячейка свободна или удалена, используем её
             if self.flags['U'][index] == 0 or self.flags['D'][index] == 1:
-                # Нашли свободное место или удаленную ячейку
                 break
 
-            if not collision_occurred and i > 0:
-                collision_occurred = True
-                self.flags['C'][h] = 1  # Устанавливаем флажок коллизии для исходного адреса
-
-            last_index = index
+            collision_occurred = True
+            prev_index = index
+            i += 1
 
         # Если не нашли свободного места
-        if self.flags['U'][index] == 1 and self.flags['D'][index] == 0:
-            print("Хеш-таблица заполнена")
-            return False
+        if i >= self.size and self.flags['U'][index] == 1 and self.flags['D'][index] == 0:
+            # Проверяем, есть ли удаленные ячейки в таблице
+            for j in range(self.size):
+                if self.flags['D'][j] == 1 or self.flags['U'][j] == 0:
+                    index = j
+                    break
+            else:
+                print("Хеш-таблица заполнена")
+                return False
 
         # Заполняем ячейку
         self.keys[index] = key
         self.data[index] = data
         self.flags['U'][index] = 1
         self.flags['D'][index] = 0
+        self.flags['T'][index] = 1  # Новая ячейка всегда терминальная
 
         # Обновляем флажки и указатели
-        if collision_occurred:
-            # Если была коллизия, обновляем указатель P0 предыдущей ячейки
-            self.P0[last_index] = index
-            self.flags['T'][last_index] = 0  # Предыдущая ячейка больше не терминальная
-            self.flags['T'][index] = 1  # Новая ячейка становится терминальной
-        else:
-            # Нет коллизии - это одиночная запись
-            self.flags['T'][index] = 1
-            self.P0[index] = index  # Указывает на себя
+        if collision_occurred and prev_index is not None:
+            self.flags['C'][h] = 1  # Устанавливаем флажок коллизии
+            self.P0[prev_index] = index  # Связываем с предыдущей ячейкой
+            self.flags['T'][prev_index] = 0  # Предыдущая ячейка не терминальная
+        self.P0[index] = index  # Новая ячейка указывает на себя
 
         print(f"Добавлено: '{key}' -> '{data}' по индексу {index}")
         return True
@@ -94,15 +98,19 @@ class HashTable:
         """Поиск записи по ключу"""
         V, h = self.hash_function(key)
         index = h
+        visited = set()
 
         for i in range(self.size):
             index = self.quadratic_probing(h, i)
+            if index in visited:
+                break
+            visited.add(index)
 
             # Если ячейка свободна и не была удалена
             if self.flags['U'][index] == 0 and self.flags['D'][index] == 0:
                 return None
 
-            # Если ячейка занята и не удалена, и ключ совпадает
+            # Если ячейка занята, не удалена и ключ совпадает
             if (self.flags['U'][index] == 1 and self.flags['D'][index] == 0 and
                     self.keys[index] == key):
                 return {
@@ -113,15 +121,27 @@ class HashTable:
                     'P0': self.P0[index]
                 }
 
-            # Если дошли до терминальной ячейки в цепочке
-            if self.flags['T'][index] == 1:
-                break
+        # Если есть коллизия, продолжаем поиск по цепочке P0
+        if self.flags['C'][h] == 1:
+            index = h
+            visited = set()
+            while index is not None and index not in visited:
+                visited.add(index)
+                if (self.flags['U'][index] == 1 and self.flags['D'][index] == 0 and
+                        self.keys[index] == key):
+                    return {
+                        'index': index,
+                        'key': self.keys[index],
+                        'data': self.data[index],
+                        'flags': {k: self.flags[k][index] for k in self.flags},
+                        'P0': self.P0[index]
+                    }
+                index = self.P0[index] if self.P0[index] is not None else None
 
         return None
 
     def delete(self, key):
         """Удаление записи по ключу"""
-        # Сначала находим запись
         found = self.search(key)
         if found is None:
             print(f"Ключ '{key}' не найден")
@@ -132,69 +152,54 @@ class HashTable:
 
         # Устанавливаем флажок вычеркивания
         self.flags['D'][index] = 1
+        self.flags['U'][index] = 0
 
-        # Анализируем тип записи
+        # Если это одиночная запись
         if found['flags']['T'] == 1 and self.P0[index] == index:
-            # Одиночная запись - просто освобождаем
-            self.flags['U'][index] = 0
             print(f"Удалена одиночная запись '{key}' по индексу {index}")
-        elif found['flags']['T'] == 1 and self.P0[index] != index:
-            # Последняя в цепочке - находим предыдущую
+            return True
+
+        # Если есть коллизия, обновляем цепочку
+        if self.flags['C'][h] == 1:
             prev_index = None
-            for i in range(self.size):
-                current = self.quadratic_probing(h, i)
-                if self.P0[current] == index:
-                    prev_index = current
+            curr_index = h
+            visited = set()
+
+            # Находим предыдущую запись в цепочке
+            while curr_index is not None and curr_index not in visited:
+                if self.P0[curr_index] == index:
+                    prev_index = curr_index
                     break
+                visited.add(curr_index)
+                curr_index = self.P0[curr_index]
+
+            next_index = self.P0[index]
 
             if prev_index is not None:
-                # Освобождаем текущую
-                self.flags['U'][index] = 0
-                # Делаем предыдущую терминальной
-                self.flags['T'][prev_index] = 1
-                self.P0[prev_index] = prev_index
-                print(f"Удалена последняя запись в цепочке '{key}' по индексу {index}")
-        elif found['flags']['T'] == 0 and self.P0[index] != index:
-            # Промежуточная в цепочке - заменяем следующей
-            next_index = self.P0[index]
-            next_entry = {
-                'key': self.keys[next_index],
-                'data': self.data[next_index],
-                'flags': {k: self.flags[k][next_index] for k in self.flags},
-                'P0': self.P0[next_index]
-            }
+                # Связываем предыдущую запись с следующей
+                self.P0[prev_index] = next_index
+                if next_index is None or next_index == index:
+                    self.flags['T'][prev_index] = 1
+                print(f"Удалена запись '{key}' по индексу {index}, обновлена цепочка")
+            else:
+                # Это первая запись в цепочке
+                if next_index is not None and next_index != index:
+                    # Копируем следующую запись на место текущей
+                    self.keys[index] = self.keys[next_index]
+                    self.data[index] = self.data[next_index]
+                    for k in self.flags:
+                        self.flags[k][index] = self.flags[k][next_index]
+                    self.P0[index] = self.P0[next_index]
+                    self.flags['U'][index] = 1
+                    self.flags['D'][index] = 0
 
-            # Копируем следующую запись на место текущей
-            self.keys[index] = next_entry['key']
-            self.data[index] = next_entry['data']
-            for k in self.flags:
-                self.flags[k][index] = next_entry['flags'][k]
-            self.P0[index] = next_entry['P0']
-
-            # Освобождаем следующую запись
-            self.flags['U'][next_index] = 0
-            print(f"Удалена промежуточная запись в цепочке '{key}', заменена записью из индекса {next_index}")
-        elif found['flags']['T'] == 0 and found['flags']['C'] == 1:
-            # Первая в цепочке с коллизией - заменяем следующей
-            next_index = self.P0[index]
-            next_entry = {
-                'key': self.keys[next_index],
-                'data': self.data[next_index],
-                'flags': {k: self.flags[k][next_index] for k in self.flags},
-                'P0': self.P0[next_index]
-            }
-
-            # Копируем следующую запись на место текущей
-            self.keys[index] = next_entry['key']
-            self.data[index] = next_entry['data']
-            for k in self.flags:
-                self.flags[k][index] = next_entry['flags'][k]
-            self.P0[index] = next_entry['P0']
-
-            # Освобождаем следующую запись
-            self.flags['U'][next_index] = 0
-            self.flags['C'][index] = 1  # Сохраняем флажок коллизии
-            print(f"Удалена первая запись в цепочке с коллизией '{key}', заменена записью из индекса {next_index}")
+                    # Освобождаем следующую ячейку
+                    self.flags['U'][next_index] = 0
+                    self.flags['D'][next_index] = 1
+                    print(f"Удалена первая запись в цепочке '{key}', заменена записью из индекса {next_index}")
+                else:
+                    self.flags['C'][h] = 0  # Нет больше коллизий
+                    print(f"Удалена последняя запись в цепочке '{key}' по индексу {index}")
 
         return True
 
@@ -212,62 +217,6 @@ class HashTable:
                   f"{self.flags['T'][i]}\t{self.flags['L'][i]}\t"
                   f"{self.flags['D'][i]}\t{p0}")
 
-        # Расчет коэффициента заполнения
         filled = sum(1 for u in self.flags['U'] if u == 1)
         load_factor = filled / self.size
         print(f"\nКоэффициент заполнения: {load_factor:.2f}")
-
-
-# Пример использования
-if __name__ == "__main__":
-    # Создаем хеш-таблицу для математических терминов
-    ht = HashTable()
-
-    # Добавляем записи
-    terms = [
-        ("алгебра", "Раздел математики, изучающий операции и отношения"),
-        ("геометрия", "Раздел математики, изучающий пространственные структуры"),
-        ("анализ", "Раздел математики, изучающий функции и их свойства"),
-        ("топология", "Раздел математики, изучающий свойства пространств"),
-        ("логика", "Раздел математики, изучающий формальные системы"),
-        ("комбинаторика", "Раздел математики, изучающий дискретные структуры"),
-        ("теория чисел", "Раздел математики, изучающий свойства чисел"),
-        ("дифференциал", "Основное понятие дифференциального исчисления"),
-        ("интеграл", "Основное понятие интегрального исчисления"),
-        ("матрица", "Прямоугольная таблица чисел"),
-        ("вектор", "Элемент векторного пространства"),
-        ("граф", "Совокупность вершин и ребер"),
-        ("изоморфизм", "Взаимно однозначное соответствие"),
-        ("гомоморфизм", "Отображение, сохраняющее структуру"),
-        ("аксиома", "Исходное положение теории"),
-        ("теорема", "Утверждение, требующее доказательства"),
-        ("лемма", "Вспомогательное утверждение"),
-        ("следствие", "Утверждение, выводимое из теоремы"),
-        ("доказательство", "Логическое обоснование истинности"),
-        ("контрпример", "Пример, опровергающий утверждение")
-    ]
-
-    # Вставляем только 15 записей из 20, чтобы были коллизии
-    for i in range(15):
-        ht.insert(*terms[i])
-
-    # Выводим таблицу
-    ht.display()
-
-    # Поиск записи
-    print("\nПоиск 'алгебра':")
-    result = ht.search("алгебра")
-    print(result)
-
-    # Удаление записи
-    print("\nУдаление 'геометрия':")
-    ht.delete("геометрия")
-    ht.display()
-
-    # Попытка вставки существующего ключа
-    print("\nПопытка вставить существующий ключ:")
-    ht.insert("алгебра", "Новое определение")
-
-    # Поиск удаленной записи
-    print("\nПоиск удаленной 'геометрия':")
-    print(ht.search("геометрия"))

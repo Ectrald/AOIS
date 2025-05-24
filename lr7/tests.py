@@ -1,7 +1,10 @@
 import unittest
 from copy import deepcopy
-
+from io import StringIO
+from contextlib import redirect_stdout
+import sys
 from main import AssociativeProcessorDiagonal, example_matrix_data_str
+
 
 class TestAssociativeProcessorDiagonal(unittest.TestCase):
     def setUp(self):
@@ -9,25 +12,34 @@ class TestAssociativeProcessorDiagonal(unittest.TestCase):
         self.ap.initialize_matrix_from_data(example_matrix_data_str)
 
     def test_initialize_matrix_from_data(self):
-        # Проверяем размерность и содержимое первой строки
         self.assertEqual(len(self.ap.matrix), 16)
         self.assertEqual(len(self.ap.matrix[0]), 16)
-        self.assertEqual(self.ap.matrix[0], [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+        self.assertEqual(self.ap.matrix[0], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(self.ap.matrix[11], [1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
 
     def test_generate_random_matrix(self):
         self.ap.generate_random_matrix()
         for row in self.ap.matrix:
             for item in row:
                 self.assertIn(item, (0, 1))
+        self.assertEqual(len(self.ap.matrix), 16)
+        self.assertEqual(len(self.ap.matrix[0]), 16)
 
     def test_read_write_word(self):
-        test_word = [1]*16
+        test_word = [1] * 16
         self.ap.write_word(5, test_word)
         result = self.ap.read_word(5)
         self.assertEqual(result, test_word)
 
+        self.ap.write_word(0, [0] * 16)
+        self.assertEqual(self.ap.read_word(0), [0] * 16)
+        self.ap.write_word(15, [1] * 16)
+        self.assertEqual(self.ap.read_word(15), [1] * 16)
+
         with self.assertRaises(ValueError):
-            self.ap.write_word(16, test_word)  # индекс вне диапазона
+            self.ap.write_word(16, test_word)
+        with self.assertRaises(ValueError):
+            self.ap.read_word(-1)
 
     def test_read_write_address_column_diagonal(self):
         col_data = [((i + 3) % 2) for i in range(16)]
@@ -35,82 +47,132 @@ class TestAssociativeProcessorDiagonal(unittest.TestCase):
         read_col = self.ap.read_address_column_diagonal(2)
         self.assertEqual(read_col, col_data)
 
+        self.ap.write_address_column_diagonal(0, [0] * 16)
+        self.assertEqual(self.ap.read_address_column_diagonal(0), [0] * 16)
+        self.ap.write_address_column_diagonal(15, [1] * 16)
+        self.assertEqual(self.ap.read_address_column_diagonal(15), [1] * 16)
+
         with self.assertRaises(ValueError):
             self.ap.write_address_column_diagonal(17, col_data)
+        with self.assertRaises(ValueError):
+            self.ap.read_address_column_diagonal(-1)
 
     def test_apply_logical_func(self):
-        # Проверка f0 (всегда 0)
-        self.ap.write_word(0, [1]*16)
-        self.ap.write_word(1, [0]*16)
+        self.ap.write_word(0, [1] * 16)
+        self.ap.write_word(1, [0] * 16)
         self.ap.apply_logical_func('f0', 0, 1, 2)
-        self.assertEqual(self.ap.read_word(2), [0]*16)
+        self.assertEqual(self.ap.read_word(2), [0] * 16)
 
-        # Проверка f5 (результат = второй операнд)
-        self.ap.write_word(3, [1,0]*8)
-        self.ap.write_word(4, [0,1]*8)
+        self.ap.write_word(3, [1, 0] * 8)
+        self.ap.write_word(4, [0, 1] * 8)
         self.ap.apply_logical_func('f5', 3, 4, 5)
-        self.assertEqual(self.ap.read_word(5), [0,1]*8)
+        self.assertEqual(self.ap.read_word(5), [0, 1] * 8)
 
-        # Проверка f10 (инверсия второго операнда)
         self.ap.apply_logical_func('f10', 3, 4, 6)
-        self.assertEqual(self.ap.read_word(6), [1,0]*8)
+        self.assertEqual(self.ap.read_word(6), [1, 0] * 8)
 
-        # Проверка f15 (всегда 1)
         self.ap.apply_logical_func('f15', 3, 4, 7)
-        self.assertEqual(self.ap.read_word(7), [1]*16)
+        self.assertEqual(self.ap.read_word(7), [1] * 16)
 
         with self.assertRaises(ValueError):
             self.ap.apply_logical_func('unknown', 0, 1, 2)
+        with self.assertRaises(ValueError):
+            self.ap.apply_logical_func('f0', -1, 1, 2)
+        with self.assertRaises(ValueError):
+            self.ap.apply_logical_func('f0', 0, 16, 2)
 
     def test_search_by_correspondence(self):
-        # В тестовой матрице есть слово, совпадающее с аргументом
         arg = self.ap.read_word(0)
         matches = self.ap.search_by_correspondence(arg)
         self.assertIn(0, matches)
 
-        # Аргумент, не совпадающий ни с одним словом
         arg = [1 - b for b in self.ap.read_word(0)]
         matches = self.ap.search_by_correspondence(arg)
         self.assertTrue(isinstance(matches, list))
+
+        self.ap.write_word(1, arg)
+        self.ap.write_word(2, arg)
+        matches = self.ap.search_by_correspondence(arg)
+        self.assertIn(1, matches)
+        self.assertIn(2, matches)
 
     def test_search_by_correspondence_with_g_l(self):
         arg = self.ap.read_word(1)
         matches = self.ap.search_by_correspondence_with_g_l(arg)
         self.assertIn(1, matches)
 
-        # С маской (должно вернуть все слова, если все -1)
-        arg_mask = [-1]*16
+        arg_mask = [-1] * 16
         matches = self.ap.search_by_correspondence_with_g_l(arg_mask)
         self.assertEqual(set(matches), set(range(16)))
 
+        arg = [1, 0] + [-1] * 14
+        matches = self.ap.search_by_correspondence_with_g_l(arg)
+        self.assertTrue(len(matches) > 0)
+
+        arg = [1] * 16
+        self.ap.write_word(0, [0] * 16)
+        matches = self.ap.search_by_correspondence_with_g_l(arg)
+        self.assertEqual(matches, [])
+
     def test_arithmetic_sum_fields(self):
-        # Для теста упростим: запишем в S0 слово, где V=101, A=0001, B=0011 (1+3=4)
-        word = [1,0,1] + [0,0,0,1] + [0,0,1,1] + [0]*5  # V=101, A=1, B=3, S=00000
+        # Test case 1: V=101, A=0001, B=0011 (1+3=4)
+        word = [1, 0, 1] + [0, 0, 0, 1] + [0, 0, 1, 1] + [0] * 5
         self.ap.write_word(0, word)
-        self.ap.arithmetic_sum_fields([1,0,1])
+        self.ap.arithmetic_sum_fields([1, 0, 1])
         updated = self.ap.read_word(0)
+        self.assertEqual(updated[11:16], [0, 0, 1, 0, 0])
 
-        # Проверяем, что поле S стало равно 00100 (4)
-        self.assertEqual(updated[11:16], [0,0,1,0,0])
+        # Test case 2: Overflow (A=1111, B=1111, sum=30, 5 bits=11110)
+        word = [1, 0, 1] + [1, 1, 1, 1] + [1, 1, 1, 1] + [0] * 5
+        self.ap.write_word(1, word)
+        self.ap.arithmetic_sum_fields([1, 0, 1])
+        updated = self.ap.read_word(1)
+        self.assertEqual(updated[11:16], [1, 1, 1, 1, 0])
 
-        # Если ключ не совпадает, изменений не должно быть
+        # Test case 3: Non-matching key
         before = deepcopy(self.ap.matrix)
-        self.ap.arithmetic_sum_fields([0,0,0])  # Нет такого V
+        self.ap.write_word(2, [0, 0, 0] + [1, 0, 0, 0] + [0, 0, 0, 1] + [0] * 5)
+        self.ap.arithmetic_sum_fields([1, 1, 1])  # No matches
+        self.assertEqual(self.ap.read_word(2), [0, 0, 0] + [1, 0, 0, 0] + [0, 0, 0, 1] + [0] * 5)
+        self.assertEqual(self.ap.read_word(0), [1, 0, 1] + [0, 0, 0, 1] + [0, 0, 1, 1] + [0, 0, 1, 0, 0])
 
+    def test_display_matrix(self):
+        with StringIO() as captured_output:
+            with redirect_stdout(captured_output):
+                self.ap.display_matrix()
+            output = captured_output.getvalue()
+        self.assertIn("Текущее состояние матрицы:", output)
+        self.assertEqual(len(output.split('\n')), 20)  # 16 rows + header + separator
+
+    def test_display_word_as_string(self):
+        with StringIO() as captured_output:
+            with redirect_stdout(captured_output):
+                self.ap.display_word_as_string([1, 0] * 8, "TestWord")
+            output = captured_output.getvalue()
+        self.assertIn("TestWord: 1010101010101010", output)
+
+    def test_bin_list_to_int(self):
+        self.assertEqual(self.ap._bin_list_to_int([1, 0, 1]), 5)
+        self.assertEqual(self.ap._bin_list_to_int([0, 0, 0]), 0)
+        self.assertEqual(self.ap._bin_list_to_int([1, 1, 1, 1]), 15)
+
+    def test_int_to_bin_list(self):
+        self.assertEqual(self.ap._int_to_bin_list(4, 5), [0, 0, 1, 0, 0])
+        self.assertEqual(self.ap._int_to_bin_list(30, 5), [1, 1, 1, 1, 0])
+        self.assertEqual(self.ap._int_to_bin_list(0, 5), [0, 0, 0, 0, 0])
 
     def test_errors(self):
-        # Некорректная длина данных
         with self.assertRaises(ValueError):
-            self.ap.initialize_matrix_from_data("1,0,0,0\n1,0,0,0")  # мало строк
+            self.ap.initialize_matrix_from_data("1,0,0,0\n1,0,0,0")
+        with self.assertRaises(ValueError):
+            self.ap.write_word(0, [1, 0, 1])
+        with self.assertRaises(ValueError):
+            self.ap.write_address_column_diagonal(0, [1, 1, 1])
+        with self.assertRaises(ValueError):
+            self.ap.arithmetic_sum_fields([1, 1, 1, 1])
 
-        with self.assertRaises(ValueError):
-            self.ap.write_word(0, [1,0,1])  # мало бит
 
-        with self.assertRaises(ValueError):
-            self.ap.write_address_column_diagonal(0, [1,1,1])  # мало бит
 
-        with self.assertRaises(ValueError):
-            self.ap.arithmetic_sum_fields([1,1,1,1])  # слишком много бит
 
 if __name__ == "__main__":
     unittest.main()
